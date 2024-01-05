@@ -41,11 +41,14 @@ if __name__ == "__main__":
 	# plt.imshow(dm.squeeze(), alpha=0.5)
 	# plt.show()
 
-	# generate_density_maps('C:/Users/grega/faks/mag/FSC147_384_V2', ksize=3, sigma=0.25)
+	# generate_density_maps('/mnt/c/Users/grega/faks/mag/FSC147_384_V2', ksize=3, sigma=0.25)
 
-	x = np.load("/d/hpc/projects/FRI/DL/gs1121/FSC147_384_V2/gt_density_maps_ksize=3x3_sig=0.25/2.npy")
-	plt.imshow(x)
-	plt.savefig("dmtest.png")
+	# x = np.load("/d/hpc/projects/FRI/DL/gs1121/FSC147_384_V2/gt_density_maps_ksize=3x3_sig=0.25/2.npy")
+	# x = np.load("../FSC147_384_V2/gt_density_maps_ksize=3x3_sig=0.25/2.npy")
+	# print(x.dtype)
+	# plt.imshow(x)
+	# plt.show()
+	# plt.savefig("dmtest.png")
 
 	# plt.imshow(Image.open('C:/Users/grega/faks/mag/FSC147_384_V2/images_384_VarV2/1123.jpg'))
 	# plt.imshow(np.load('C:/Users/grega/faks/mag/FSC147_384_V2/gt_density_maps_ksize=3x3_sig=0.25/1123.npy'), alpha=0.5)

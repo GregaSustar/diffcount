@@ -22,7 +22,7 @@ class FSC147DataDictWrapper(Dataset):
 	def __len__(self):
 		return len(self.dset)
 
-# TODO change this from hardcoded variables to config file
+# TODO change this from hardcoded variables to config file (n_exemplars, resize_shape, root, dm_dirname, [maybe also transforms????])
 class FSC147Loader(pl.LightningDataModule):
 	def __init__(
 			self,
@@ -225,23 +225,21 @@ def generate_density_maps(rootdir, ksize, sigma, dtype=np.float32):
 	"""
 	Generates GT density maps from dot annotations and saves them to rootdir.
 	"""
-	annotations = None
+	savedir = os.path.join(rootdir, f'gt_density_maps_ksize={ksize}x{ksize}_sig={sigma}')
+	if not os.path.isdir(savedir):
+		os.makedirs(savedir)
 	with open(os.path.join(rootdir, 'annotation_FSC147_384.json'), 'rb') as f:
 		annotations = json.load(f)
-
-	for img_name, ann in annotations.items():
-		w, h = int(ann['W'] * ann['ratio_w']), int(ann['H'] * ann['ratio_h'])
-		bitmap = np.zeros((h, w), dtype=dtype)
-		for point in ann['points']:
-			x, y = int(point[0])-1, int(point[1])-1
-			bitmap[y, x] = 1.0
-		density_map = cv2.GaussianBlur(bitmap, (ksize, ksize), sigma)
-
-		savedir = os.path.join(rootdir, f'gt_density_maps_ksize={ksize}x{ksize}_sig={sigma}')
-		if not os.path.isdir(savedir):
-			os.makedirs(savedir)
-		np.save(
-			os.path.join(savedir, os.path.splitext(img_name)[0] + '.npy'), 
-			density_map
-		)
-		print(f'{img_name}.npy saved')
+		for img_name, ann in annotations.items():
+			w, h = int(ann['W'] * ann['ratio_w']), int(ann['H'] * ann['ratio_h'])
+			bitmap = np.zeros((h, w), dtype=dtype)
+			for point in ann['points']:
+				x, y = int(point[0])-1, int(point[1])-1
+				bitmap[y, x] = 1.0
+			density_map = cv2.GaussianBlur(bitmap, (ksize, ksize), sigma)
+			print(density_map.dtype)
+			np.save(
+				os.path.join(savedir, os.path.splitext(img_name)[0] + '.npy'), 
+				density_map
+			)
+			print(f'{img_name}.npy saved')

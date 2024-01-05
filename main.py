@@ -106,15 +106,15 @@ def get_parser(**parser_kwargs):
 	parser.add_argument(
 		"-p", "--project", help="name of new or path to existing project"
 	)
-	parser.add_argument(
-		"-d",
-		"--debug",
-		type=str2bool,
-		nargs="?",
-		const=True,
-		default=False,
-		help="enable post-mortem debugging",
-	)
+	# parser.add_argument(
+	# 	"-d",
+	# 	"--debug",
+	# 	type=str2bool,
+	# 	nargs="?",
+	# 	const=True,
+	# 	default=False,
+	# 	help="enable post-mortem debugging",
+	# )
 	parser.add_argument(
 		"-s",
 		"--seed",
@@ -187,13 +187,13 @@ def get_parser(**parser_kwargs):
 		default=False,  # TODO: later default to True
 		help="log to wandb",
 	)
-	if version.parse(torch.__version__) >= version.parse("2.0.0"):
-		parser.add_argument(
-			"--resume_from_checkpoint",
-			type=str,
-			default=None,
-			help="single checkpoint file to resume from",
-		)
+	# if version.parse(torch.__version__) >= version.parse("2.0.0"):
+	parser.add_argument(
+		"--resume_from_checkpoint",
+		type=str,
+		default=None,
+		help="single checkpoint file to resume from",
+	)
 	default_args = default_trainer_args()
 	for key in default_args:
 		parser.add_argument("--" + key, default=default_args[key])
@@ -237,7 +237,7 @@ class SetupCallback(Callback):
 		cfgdir,
 		config,
 		lightning_config,
-		debug,
+		# debug,
 		ckpt_name=None,
 	):
 		super().__init__()
@@ -248,11 +248,12 @@ class SetupCallback(Callback):
 		self.cfgdir = cfgdir
 		self.config = config
 		self.lightning_config = lightning_config
-		self.debug = debug
+		# self.debug = debug
 		self.ckpt_name = ckpt_name
 
 	def on_exception(self, trainer: pl.Trainer, pl_module, exception):
-		if not self.debug and trainer.global_rank == 0:
+		# if not self.debug and trainer.global_rank == 0:
+		if trainer.global_rank == 0:
 			print("Summoning checkpoint.")
 			if self.ckpt_name is None:
 				ckpt_path = os.path.join(self.ckptdir, "last.ckpt")
@@ -280,7 +281,6 @@ class SetupCallback(Callback):
 			print(OmegaConf.to_yaml(self.config))
 			if MULTINODE_HACKS:
 				import time
-
 				time.sleep(5)
 			OmegaConf.save(
 				self.config,
@@ -483,16 +483,16 @@ def init_wandb(save_dir, opt, config, group_name, name_str):
 	os.makedirs(save_dir, exist_ok=True)
 
 	os.environ["WANDB_DIR"] = save_dir
-	if opt.debug:
-		wandb.init(project=opt.projectname, mode="offline", group=group_name)
-	else:
-		wandb.init(
-			project=opt.projectname,
-			config=config,
-			settings=wandb.Settings(code_dir="./sgm"),
-			group=group_name,
-			name=name_str,
-		)
+	# if opt.debug:
+	# 	wandb.init(project=opt.projectname, mode="offline", group=group_name)
+	# else:
+	wandb.init(
+		project=opt.projectname,
+		config=dict(config),
+		settings=wandb.Settings(code_dir="./sgm"),
+		group=group_name,
+		name=name_str,
+	)
 
 
 if __name__ == "__main__":
@@ -670,7 +670,7 @@ if __name__ == "__main__":
 				"params": {
 					"name": nowname,
 					# "save_dir": logdir,
-					"offline": opt.debug,
+					# "offline": opt.debug,
 					"id": nowname,
 					"project": opt.projectname,
 					"log_model": False,
@@ -761,7 +761,7 @@ if __name__ == "__main__":
 					"cfgdir": cfgdir,
 					"config": config,
 					"lightning_config": lightning_config,
-					"debug": opt.debug,
+					# "debug": opt.debug,
 					"ckpt_name": melk_ckpt_name,
 				},
 			},
@@ -887,9 +887,9 @@ if __name__ == "__main__":
 
 		#         pudb.set_trace()
 
-		import signal
+		# import signal
 
-		signal.signal(signal.SIGUSR1, melk)
+		# signal.signal(signal.SIGUSR1, melk)
 		# signal.signal(signal.SIGUSR2, divein)
 		
 		# run
@@ -897,45 +897,44 @@ if __name__ == "__main__":
 			try:
 				trainer.fit(model, data, ckpt_path=ckpt_resume_path)
 			except Exception:
-				if not opt.debug:
-					melk()
+				# if not opt.debug:
+				melk()
 				raise
 		if not opt.no_test and not trainer.interrupted:
 			trainer.test(model, data)
-	except RuntimeError as err:
-		if MULTINODE_HACKS:
-			import datetime
-			import os
-			import socket
+	# except RuntimeError as err:
+	# 	if MULTINODE_HACKS:
+	# 		import datetime
+	# 		import os
+	# 		import socket
 
-			import requests
+	# 		import requests
 
-			device = os.environ.get("CUDA_VISIBLE_DEVICES", "?")
-			hostname = socket.gethostname()
-			ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-			# resp = requests.get("http://169.254.169.254/latest/meta-data/instance-id")
-			print(
-				# f"ERROR at {ts} on {hostname}/{resp.text} (CUDA_VISIBLE_DEVICES={device}): {type(err).__name__}: {err}",
-				f"ERROR at {ts} on {hostname} (CUDA_VISIBLE_DEVICES={device}): {type(err).__name__}: {err}",
-				flush=True,
-			)
-		raise err
-	except Exception:
-		if opt.debug and trainer.global_rank == 0:
-			try:
-				import pudb as debugger
-			except ImportError:
-				import pdb as debugger
-			debugger.post_mortem()
-		raise
+	# 		device = os.environ.get("CUDA_VISIBLE_DEVICES", "?")
+	# 		hostname = socket.gethostname()
+	# 		ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+	# 		# resp = requests.get("http://169.254.169.254/latest/meta-data/instance-id")
+	# 		print(
+	# 			# f"ERROR at {ts} on {hostname}/{resp.text} (CUDA_VISIBLE_DEVICES={device}): {type(err).__name__}: {err}",
+	# 			f"ERROR at {ts} on {hostname} (CUDA_VISIBLE_DEVICES={device}): {type(err).__name__}: {err}",
+	# 			flush=True,
+	# 		)
+	# 	raise err
+	# except Exception:
+	# 	if opt.debug and trainer.global_rank == 0:
+	# 		try:
+	# 			import pudb as debugger
+	# 		except ImportError:
+	# 			import pdb as debugger
+	# 		debugger.post_mortem()
+	# 	raise
 	finally:
 		# move newly created debug project to debug_runs
-		if opt.debug and not opt.resume and trainer.global_rank == 0:
-			dst, name = os.path.split(logdir)
-			dst = os.path.join(dst, "debug_runs", name)
-			os.makedirs(os.path.split(dst)[0], exist_ok=True)
-			os.rename(logdir, dst)
-
+		# if opt.debug and not opt.resume and trainer.global_rank == 0:
+		# 	dst, name = os.path.split(logdir)
+		# 	dst = os.path.join(dst, "debug_runs", name)
+		# 	os.makedirs(os.path.split(dst)[0], exist_ok=True)
+		# 	os.rename(logdir, dst)
 		if opt.wandb:
 			wandb.finish()
 		# if trainer.global_rank == 0:

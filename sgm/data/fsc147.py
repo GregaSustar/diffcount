@@ -4,7 +4,8 @@ import json
 import torch
 import numpy as np
 from PIL import Image
-from torchvision import transforms
+import torchvision.transforms as transforms
+import torchvision.transforms.functional as F
 from torch.utils.data import Dataset, DataLoader
 from typing import Optional, Callable, Literal
 import pytorch_lightning as pl
@@ -21,6 +22,7 @@ class FSC147DataDictWrapper(Dataset):
 
 	def __len__(self):
 		return len(self.dset)
+	
 
 # TODO change this from hardcoded variables to config file (n_exemplars, resize_shape, root, dm_dirname, [maybe also transforms????])
 class FSC147Loader(pl.LightningDataModule):
@@ -34,42 +36,17 @@ class FSC147Loader(pl.LightningDataModule):
 		self.num_workers = num_workers
 		self.shuffle = shuffle
 		n_exemplars = 3
-		resize_shape = (256, 256)
 		root = os.environ.get("DATA_ROOT", None)
 		if root is None:
 			root = './'
 			warnings.warn("'DATA_ROOT' environment variable not set, using current directory as data root")
 		dm_dirname = 'gt_density_maps_ksize=3x3_sig=0.25'
-		train_transform = transforms.Compose([
-			transforms.Resize(resize_shape, antialias=True),
-			transforms.RandomHorizontalFlip(p=0.5),
-			transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-			transforms.ToTensor(),
-			transforms.Lambda(lambda x: x * 2.0 - 1.0), # normalize to [-1, 1]
-			# transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-		])
-		train_target_transform = transforms.Compose([
-			transforms.ToTensor(),
-			transforms.Resize(resize_shape, antialias=True),
-		])
-		test_transform = transforms.Compose([
-			transforms.Resize(resize_shape, antialias=True),
-			transforms.ToTensor(),
-			transforms.Lambda(lambda x: x * 2.0 - 1.0), # normalize to [-1, 1]
-			# transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-		])
-		test_target_transform = transforms.Compose([
-			transforms.ToTensor(),
-			transforms.Resize(resize_shape, antialias=True),
-		])
 		
 		self.train_dataset = FSC147DataDictWrapper(
 			FSC147Dataset(
 				root=root,
 				dm_dirname=dm_dirname,
 				split='train',
-				transform=train_transform,
-				target_transform=train_target_transform,
 				n_examplars=n_exemplars
 			)
 		)
@@ -79,8 +56,6 @@ class FSC147Loader(pl.LightningDataModule):
 				root=root,
 				dm_dirname=dm_dirname,
 				split='val',
-				transform=test_transform,
-				target_transform=test_target_transform,
 				n_examplars=n_exemplars
 			)
 		)
@@ -90,8 +65,6 @@ class FSC147Loader(pl.LightningDataModule):
 				root=root,
 				dm_dirname=dm_dirname,
 				split='test',
-				transform=test_transform,
-				target_transform=test_target_transform,
 				n_examplars=n_exemplars
 			)
 		)
@@ -158,16 +131,15 @@ class FSC147Dataset(Dataset):
 			root: str,
 			dm_dirname: str,
 			split: Literal['train', 'val', 'test'] = 'train',
-			transform: Optional[Callable] = None,
-			target_transform: Optional[Callable] = None,
 			n_examplars: int = 3,
 	):
 		self.root = root
 		self.dm_dirname = dm_dirname
 		self.split = split
-		self.transform = transform
-		self.target_transform = target_transform
 		self.n_examplars = n_examplars
+		self.re_size = (256, 256)
+		self.hflip_p = 0.5
+		self.cj_p = 0.8
 
 		self.img_names = None
 		with open(os.path.join(self.root, 'Train_Test_Val_FSC_147.json'), 'rb') as f:
@@ -176,6 +148,36 @@ class FSC147Dataset(Dataset):
 		self.annotations = None
 		with open(os.path.join(self.root, 'annotation_FSC147_384.json'), 'rb') as f:
 			self.annotations = {k: v for k, v in json.load(f).items() if k in self.img_names}
+
+
+	def transform(self, img, bboxes, dm, split='train'):
+		# ToTensor
+		img = F.to_tensor(img) # (C, H, W)
+		dm = F.to_tensor(dm)
+
+		# Resize
+		old_h, old_w = img.shape[-2:]
+		img = F.resize(img, self.re_size, antialias=True)
+		dm = F.resize(dm, self.re_size, antialias=True)
+		new_h, new_w = img.shape[-2:]
+		rw = new_w / old_w
+		rh = new_h / old_h
+		bboxes = bboxes * torch.tensor([rw, rh, rw, rh])
+
+		if split == 'train':
+			# RandomHorizontalFlip
+			if torch.rand(1) < self.hflip_p:
+				img = F.hflip(img)
+				dm = F.hflip(dm)
+				bboxes[:, [0, 2]] = self.re_size[0] - bboxes[:, [2, 0]]
+
+			# RandomColorJitter
+			if torch.rand(1) < self.cj_p:
+				img = transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)(img)
+
+		# Normalize to [-1, 1]
+		img = img * 2.0 - 1.0
+		return img, bboxes, dm
 
 
 	def __len__(self):
@@ -204,19 +206,9 @@ class FSC147Dataset(Dataset):
 
 		bboxes = torch.as_tensor(self.annotations[self.img_names[index]]['box_examples_coordinates'])
 		assert len(bboxes) >= self.n_examplars, f'Not enough examplars for image {self.img_names[index]}'
-		bboxes = bboxes[:, [0, 2], :].reshape(-1, 4)[:self.n_examplars, ...]
+		bboxes = bboxes[:, [0, 2], :].reshape(-1, 4)[:self.n_examplars, ...]											# (x_min, y_min, x_max, y_max)
 
-		if self.transform:
-			old_w, old_h = img.size
-			img = self.transform(img)
-			new_w, new_h = img.shape[2:0:-1] if torch.is_tensor(img) else img.size
-			rw = new_w / old_w
-			rh = new_h / old_h
-			bboxes = bboxes * torch.tensor([rw, rh, rw, rh])
-
-		if self.target_transform:
-			density_map = self.target_transform(density_map)
-			
+		img, bboxes, density_map = self.transform(img, bboxes, density_map, split=self.split)
 		return img, bboxes, density_map
 
 
@@ -237,7 +229,6 @@ def generate_density_maps(rootdir, ksize, sigma, dtype=np.float32):
 				x, y = int(point[0])-1, int(point[1])-1
 				bitmap[y, x] = 1.0
 			density_map = cv2.GaussianBlur(bitmap, (ksize, ksize), sigma)
-			print(density_map.dtype)
 			np.save(
 				os.path.join(savedir, os.path.splitext(img_name)[0] + '.npy'), 
 				density_map

@@ -132,7 +132,7 @@ def get_parser(**parser_kwargs):
 	parser.add_argument(
 		"--projectname",
 		type=str,
-		default="stablediffusion",
+		default="diffcount",
 	)
 	parser.add_argument(
 		"-l",
@@ -157,14 +157,14 @@ def get_parser(**parser_kwargs):
 		default=False,
 		help="name run based on config file name if true, else by whole path",
 	)
-	parser.add_argument(
-		"--enable_tf32",
-		type=str2bool,
-		nargs="?",
-		const=True,
-		default=False,
-		help="enables the TensorFloat32 format both for matmuls and cuDNN for pytorch 1.12",
-	)
+	# parser.add_argument(
+	# 	"--enable_tf32",
+	# 	type=str2bool,
+	# 	nargs="?",
+	# 	const=True,
+	# 	default=False,
+	# 	help="enables the TensorFloat32 format both for matmuls and cuDNN for pytorch 1.12",
+	# )
 	parser.add_argument(
 		"--startup",
 		type=str,
@@ -337,72 +337,14 @@ class ImageLogger(Callback):
 		self.log_before_first_step = log_before_first_step
 
 	@rank_zero_only
-	def log_local(
-		self,
-		save_dir,
-		split,
-		images,
-		global_step,
-		current_epoch,
-		batch_idx,
-		pl_module: Union[None, pl.LightningModule] = None,
-	):
-		root = os.path.join(save_dir, "images", split)
-		for k in images:
-			if isheatmap(images[k]):
-				fig, ax = plt.subplots()
-				ax = ax.matshow(
-					images[k].cpu().numpy(), cmap="hot", interpolation="lanczos"
-				)
-				plt.colorbar(ax)
-				plt.axis("off")
-
-				filename = "{}_gs-{:06}_e-{:06}_b-{:06}.png".format(
-					k, global_step, current_epoch, batch_idx
-				)
-				os.makedirs(root, exist_ok=True)
-				path = os.path.join(root, filename)
-				plt.savefig(path)
-				plt.close()
-				# TODO: support wandb
-			else:
-				grid = torchvision.utils.make_grid(images[k], nrow=4)
-				if self.rescale:
-					grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
-				grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
-				grid = grid.numpy()
-				grid = (grid * 255).astype(np.uint8)
-				filename = "{}_gs-{:06}_e-{:06}_b-{:06}.png".format(
-					k, global_step, current_epoch, batch_idx
-				)
-				path = os.path.join(root, filename)
-				os.makedirs(os.path.split(path)[0], exist_ok=True)
-				img = Image.fromarray(grid)
-				img.save(path)
-				if exists(pl_module):
-					assert isinstance(
-						pl_module.logger, WandbLogger
-					), "logger_log_image only supports WandbLogger currently"
-					pl_module.logger.log_image(
-						key=f"{split}/{k}",
-						images=[
-							img,
-						],
-						step=pl_module.global_step,
-					)
-
-	@rank_zero_only
 	def log_img(self, pl_module, batch, batch_idx, split="train"):
 		check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
 		if (
 			self.check_frequency(check_idx)
 			and hasattr(pl_module, "log_images")  # batch_idx % self.batch_freq == 0
 			and callable(pl_module.log_images)
-			and
-			# batch_idx > 5 and
-			self.max_images > 0
+			and self.max_images > 0
 		):
-			logger = type(pl_module.logger)
 			is_train = pl_module.training
 			if is_train:
 				pl_module.eval()
@@ -417,6 +359,7 @@ class ImageLogger(Callback):
 					batch, split=split, **self.log_images_kwargs
 				)
 
+			bboxes = images.pop("bboxes", None)
 			for k in images:
 				N = min(images[k].shape[0], self.max_images)
 				if not isheatmap(images[k]):
@@ -426,17 +369,28 @@ class ImageLogger(Callback):
 					if self.clamp and not isheatmap(images[k]):
 						images[k] = torch.clamp(images[k], -1.0, 1.0)
 
-			self.log_local(
-				pl_module.logger.save_dir,
-				split,
-				images,
-				pl_module.global_step,
-				pl_module.current_epoch,
-				batch_idx,
-				pl_module=pl_module
-				if isinstance(pl_module.logger, WandbLogger)
-				else None,
-			)
+				if self.rescale:
+					images[k] = (images[k] + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
+				images[k] = (images[k] * 255).to(torch.uint8)
+				if k == "jpg" and bboxes is not None:
+					images[k] = [
+						torchvision.utils.draw_bounding_boxes(
+							img, boxes=bboxes[i], colors="red"
+						)
+						for i, img in enumerate(images[k])
+					]
+				grid = torchvision.utils.make_grid(images[k], nrow=4)
+				grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
+				grid = grid.numpy().astype(np.uint8)
+				img = Image.fromarray(grid)
+
+				pl_module.logger.log_image(
+					key=f"{split}/{k}",
+					images=[
+						img,
+					],
+					step=pl_module.global_step,
+				)
 
 			if is_train:
 				pl_module.train()
@@ -448,7 +402,6 @@ class ImageLogger(Callback):
 			try:
 				self.log_steps.pop(0)
 			except IndexError as e:
-				print(e)
 				pass
 			return True
 		return False
@@ -616,17 +569,17 @@ if __name__ == "__main__":
 	seed_everything(opt.seed, workers=True)
 
 	# move before model init, in case a torch.compile(...) is called somewhere
-	if opt.enable_tf32:
-		# pt_version = version.parse(torch.__version__)
-		torch.backends.cuda.matmul.allow_tf32 = True
-		torch.backends.cudnn.allow_tf32 = True
-		print(f"Enabling TF32 for PyTorch {torch.__version__}")
-	else:
-		print(f"Using default TF32 settings for PyTorch {torch.__version__}:")
-		print(
-			f"torch.backends.cuda.matmul.allow_tf32={torch.backends.cuda.matmul.allow_tf32}"
-		)
-		print(f"torch.backends.cudnn.allow_tf32={torch.backends.cudnn.allow_tf32}")
+	# if opt.enable_tf32:
+	# 	# pt_version = version.parse(torch.__version__)
+	# 	torch.backends.cuda.matmul.allow_tf32 = True
+	# 	torch.backends.cudnn.allow_tf32 = True
+	# 	print(f"Enabling TF32 for PyTorch {torch.__version__}")
+	# else:
+	print(f"Using default TF32 settings for PyTorch {torch.__version__}:")
+	print(
+		f"torch.backends.cuda.matmul.allow_tf32={torch.backends.cuda.matmul.allow_tf32}"
+	)
+	print(f"torch.backends.cudnn.allow_tf32={torch.backends.cudnn.allow_tf32}")
 
 	try:
 		# init and save configs

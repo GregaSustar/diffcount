@@ -11,35 +11,40 @@ from sgm.modules.diffusionmodules.openaimodel import UNetModel
 
 
 if __name__ == "__main__":
-
-	# trans = transforms.Compose([
-	# 	transforms.ToTensor(),
-	# 	transforms.Resize((512,512), antialias=True),
-	# 	# transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-	# ])
-
-	# targ_trans = transforms.Compose([
-	# 	transforms.ToTensor(),
-	# 	transforms.Resize((512, 512), antialias=True),
-	# ])
-
-	# dm_dirname = 'gt_density_maps_ksize=3x3_sig=0.25'
-	# dataset = FSC147Dataset(root='C:/Users/grega/faks/mag/FSC147_384_V2', dm_dirname=dm_dirname, split='train', transform=trans, target_transform=targ_trans)
-	# img, bboxes, dm = dataset[100]
-
-	# print(img)
-	# print(img.shape)
-	# print(torch.max(img), torch.min(img))
-
+	pass
 	# data = MNISTLoader(batch_size=64)
 	# data = CIFAR10Loader(batch_size=1)
 	# data = FSC147Loader(batch_size=1)
-	# samp = next(iter(data.train_dataloader()))
-	# print(samp)
+	# for samp in data.train_dataloader():
+	# 	print(samp['bboxes'])
+	# 	plt.imshow(samp['jpg'][0].permute(1, 2, 0))
+	# 	plt.plot(samp['bboxes'][0][:, 0], samp['bboxes'][0][:, 1], 'ro')
+	# 	plt.plot(samp['bboxes'][0][:, 2], samp['bboxes'][0][:, 3], 'go')
+	# 	plt.show()
 
-	# plt.imshow(img.permute(1, 2, 0))
-	# plt.imshow(dm.squeeze(), alpha=0.5)
-	# plt.show()
+
+	# import json
+	# import os
+	# import torch
+	# root = "/mnt/c/users/grega/faks/mag/FSC147_384_V2/"
+	# key = '7232.jpg'
+	# with open(os.path.join(root, 'annotation_FSC147_384.json'), 'rb') as f:
+	# 		annotations = {k: v for k, v in json.load(f).items()}
+	# 		img = Image.open(
+	# 			os.path.join(
+	# 				root,
+	# 				'images_384_VarV2',
+	# 				key
+	# 			)
+	# 		).convert('RGB')
+	# 		bboxes = torch.as_tensor(annotations[key]['box_examples_coordinates'])
+	# 		bboxes = bboxes[:, [0, 2], :].reshape(-1, 4)[:3, ...]
+	# 		print(bboxes)
+	# 		plt.imshow(img)
+	# 		plt.plot(bboxes[:, 0], bboxes[:, 1], 'ro')
+	# 		plt.plot(bboxes[:, 2], bboxes[:, 3], 'go')
+	# 		plt.show()
+
 
 	# generate_density_maps('/mnt/c/Users/grega/faks/mag/FSC147_384_V2', ksize=3, sigma=0.25)
 

@@ -45,11 +45,12 @@ class LegacyDDPMDiscretization(Discretization):
         linear_start=0.00085,
         linear_end=0.0120,
         num_timesteps=1000,
+        schedule="linear",
     ):
         super().__init__()
         self.num_timesteps = num_timesteps
         betas = make_beta_schedule(
-            "linear", num_timesteps, linear_start=linear_start, linear_end=linear_end
+            schedule, num_timesteps, linear_start=linear_start, linear_end=linear_end
         )
         alphas = 1.0 - betas
         self.alphas_cumprod = np.cumprod(alphas, axis=0)
